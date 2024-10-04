@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Monitor de Servidores</title>
+    <link rel="stylesheet" href="styles.css">
+    </head>
+    <body>
+    <h1>Dashboard de Monitoreo de Servidores</h1>
+
+    <!-- Lista de servidores -->
+    <section id="servers-section">
+        <h2>Servidores Backend</h2>
+        <table id="servers-table">
+        <thead>
+            <tr>
+            <th>Nombre de la Instancia</th>
+            <th>Estado</th>
+            <th>Último Check</th>
+            </tr>
+        </thead>
+        <tbody id="servers-body">
+            <!-- Aquí se insertarán las filas de servidores dinámicamente -->
+        </tbody>
+        </table>
+    </section>
+
+    <!-- Lista desplegable para filtrar peticiones por instancia -->
+    <section id="filter-section">
+        <h2>Filtrar Peticiones por Instancia</h2>
+        <label for="instance-filter">Instancia:</label>
+        <select id="instance-filter">
+        <!-- Opciones dinámicas -->
+        </select>
+    </section>
+
+    <!-- Tabla de peticiones por instancia -->
+    <section id="requests-section">
+        <h2>Historial de Peticiones</h2>
+        <table id="requests-table">
+        <thead>
+            <tr>
+            <th>Tipo de Petición</th>
+            <th>Payload</th>
+            <th>Fecha</th>
+            <th>Respuesta</th>
+            <th>URL</th>
+            </tr>
+        </thead>
+        <tbody id="requests-body">
+            <!-- Aquí se insertarán las filas de peticiones dinámicamente -->
+        </tbody>
+        </table>
+    </section>
+
+    <button id="refresh-btn">Actualizar</button>
+
+    <script src="dashboard.js"></script>
+    </body>
+</html>

@@ -1,0 +1,1 @@
+// Mantiene una lista dinámica de las instancias backend registradas y su estado.

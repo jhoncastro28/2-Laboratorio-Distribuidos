@@ -1,0 +1,1 @@
+// Lógica para comunicar el Dashboard con el Middleware y realizar las operaciones de monitoreo y creación/destrucción de instancias.

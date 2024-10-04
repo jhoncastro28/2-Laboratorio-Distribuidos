@@ -1,0 +1,1 @@
+//Servicio que tiene la lógica para agregar la marca de agua a la imagen utilizando bibliotecas como sharp o Jimp.
