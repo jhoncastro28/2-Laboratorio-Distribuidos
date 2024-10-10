@@ -16,6 +16,10 @@ app.post('/process', upload.single('image'), async (req, res) => {
     }
 });
 
+app.get('/healthcheck', (req, res) => {
+    res.send('OK');
+});
+
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
     console.log(`Servidor de Back-end escuchando en el puerto ${PORT}`);
