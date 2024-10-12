@@ -4,14 +4,22 @@ const fetch = require('node-fetch');
 const app = express();
 app.use(express.json());
 
-let instances = []; // Lista de las obtenidas desde el Discovery
+let instances = []; // Lista de instancias obtenidas desde el Discovery
+let roundRobinIndex = 0;
 
-function getLeastConnectedServer(instances) {
-    return instances.reduce((prev, curr) => prev.connections < curr.connections ? prev : curr);
+// Función que implementa lo de Round-Robin
+function getNextInstance() {
+    if (instances.length === 0) {
+        return null;
+    }
+
+    const instance = instances[roundRobinIndex];
+    roundRobinIndex = (roundRobinIndex + 1) % instances.length;
+    return instance;
 }
 
 app.post('/process', async (req, res) => {
-    let instance = getLeastConnectedServer(instances);
+    let instance = getNextInstance();
 
     if (!instance) {
         return res.status(503).send('No hay instancias disponibles');
@@ -33,9 +41,9 @@ app.post('/process', async (req, res) => {
         res.send(result);
     } catch (error) {
         console.error(`Error en la instancia ${instance.url}, intentando con otra...`);
-        instance.connections++; // Aumenta la carga para que no sea seleccionada otra vez temporalmente
-        // Implementar lógica para seleccionar otra instancia si falla la actual
-        const newInstance = getLeastConnectedServer(instances.filter(inst => inst !== instance));
+
+        // Intentar con la siguiente instancia en el Round-Robin
+        const newInstance = getNextInstance();
 
         if (newInstance) {
             try {
@@ -62,6 +70,7 @@ app.post('/process', async (req, res) => {
     }
 });
 
+// Registrar y desregistrar instancias
 app.post('/update-instances', (req, res) => {
     const { action, instance } = req.body;
 
