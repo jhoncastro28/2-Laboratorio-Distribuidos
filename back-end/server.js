@@ -1,18 +1,18 @@
+require('dotenv').config();
 const express = require('express');
+const axios = require('axios');
 const multer = require('multer');
 const { addWatermark } = require('./watermarkService');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() }); 
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.post('/process', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).send('No se recibió ninguna imagen');
         }
-        console.log('Archivo recibido:', req.file);
         const processedImageBuffer = await addWatermark(req.file.buffer);
-
         res.type('image/png');
         res.send(processedImageBuffer);
     } catch (error) {
@@ -21,6 +21,25 @@ app.post('/process', upload.single('image'), async (req, res) => {
     }
 });
 
+
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+const registerInstance = async () => {
+    try {
+        await axios.post(`${process.env.DISCOVERY_URL}/register`, {
+            id: process.env.INSTANCE_ID,
+            address: process.env.ADDRESS_IP,
+            port: process.env.PORT
+        });
+        console.log('Instancia registrada en el discovery');
+    } catch (error) {
+        console.error('Error al registrar instancia en el discovery:', error.message);
+    }
+};
+
+registerInstance();
 
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {
