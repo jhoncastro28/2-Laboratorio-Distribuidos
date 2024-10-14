@@ -5,7 +5,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     formData.append('image', imageInput.files[0]); // Añadimos acá la imagen que se haya subido por el usuario :)
 
     try {
-        const response = await fetch('http://localhost:9000/process', { // Acá toca poner la URL del Middleware que haga alguno para que se haga la petición
+        const response = await fetch('http://localhost:4000/process', { 
             method: 'POST',
             body: formData
         });
@@ -20,4 +20,9 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     } catch (error) {
         document.getElementById('responseMessage').innerText = 'Error al procesar la imagen: ' + error.message;
     }
+});
+
+const response = await fetch('http://localhost:4000/process', {
+    method: 'POST',
+    body: formData
 });
