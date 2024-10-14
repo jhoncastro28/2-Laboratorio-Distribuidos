@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Dashboard - Monitor de Servidores</title>
+        <link rel="stylesheet" href="styles.css">
+    </head>
+    <body>
+        <header>
+            <h1>Dashboard de Monitoreo de Servidores</h1>
+        </header>
+
+        <!-- Sección de Servidores Backend -->
+        <section id="servers-section">
+            <h2>Servidores Backend</h2>
+            <table id="servers-table">
+                <thead>
+                    <tr>
+                        <th>Nombre de la Instancia</th>
+                        <th>Estado</th>
+                        <th>Último Check</th>
+                    </tr>
+                </thead>
+                <tbody id="servers-body">
+                    <!-- Aquí se insertarán las filas de servidores dinámicamente -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Filtro de Peticiones por Instancia -->
+        <section id="filter-section">
+            <h2>Filtrar Peticiones por Instancia</h2>
+            <div class="filter-container">
+                <label for="instance-filter">Instancia:</label>
+                <select id="instance-filter">
+                    <!-- Opciones dinámicas -->
+                </select>
+            </div>
+        </section>
+
+        <!-- Historial de Peticiones -->
+        <section id="requests-section">
+            <h2>Historial de Peticiones</h2>
+            <table id="requests-table">
+                <thead>
+                    <tr>
+                        <th>Tipo de Petición</th>
+                        <th>Payload</th>
+                        <th>Fecha</th>
+                        <th>Respuesta</th>
+                        <th>URL</th>
+                    </tr>
+                </thead>
+                <tbody id="requests-body">
+                    <!-- Aquí se insertarán las filas de peticiones dinámicamente -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Historial de Estado con Gráfico -->
+        <section id="requests-section">
+            <h2>Historial de Estado</h2>
+            <canvas id="status-chart" width="400" height="200"></canvas>
+        </section>
+
+        <!-- Botones de Acción -->
+        <div class="button-container">
+            <button id="refresh-btn">Actualizar</button>
+            <button id="create-instance-btn">Crear Nueva Instancia</button>
+        </div>
+
+        <!-- Añadir librería Chart.js -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="dashboard.js"></script>
+    </body>
+</html>

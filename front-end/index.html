@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="styles.css">
+        <title>Subir Imagen</title>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Imagen con Marca de Agua</h1>
+            <form id="uploadForm">
+                <input type="file" id="imageInput" accept="image/*" required>
+                <button type="submit">Subir Imagen</button>
+            </form>
+            <div id="responseMessage"></div>
+            <div id="processedImage"></div>
+        </div>
+        <script src="client.js"></script>
+    </body>
+</html>

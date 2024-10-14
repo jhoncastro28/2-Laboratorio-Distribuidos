@@ -1,0 +1,97 @@
+/* Estilos generales */
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 20px;
+  background-color: #f4f4f9;
+  color: #333;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+h1, h2 {
+  color: #4CAF50;
+}
+
+h2 {
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+/* Estilos de las tablas */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 30px;
+  background-color: white;
+}
+
+table, th, td {
+  border: 1px solid #ddd;
+  padding: 12px;
+  text-align: left;
+}
+
+thead th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Filtros */
+.filter-container {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+label {
+  font-size: 1.1em;
+  margin-right: 10px;
+}
+
+select {
+  padding: 10px;
+  font-size: 1em;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+/* Botones */
+.button-container {
+  text-align: center;
+}
+
+button {
+  padding: 12px 20px;
+  margin: 10px;
+  font-size: 1em;
+  color: white;
+  background-color: #4CAF50;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+#refresh-btn {
+  background-color: #4CAF50;
+}
+
+#create-instance-btn {
+  background-color: #007BFF;
+}
+
+#create-instance-btn:hover {
+  background-color: #0069d9;
+}
