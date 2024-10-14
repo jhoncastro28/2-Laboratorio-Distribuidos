@@ -21,3 +21,8 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
         document.getElementById('responseMessage').innerText = 'Error al procesar la imagen: ' + error.message;
     }
 });
+
+const response = await fetch('http://localhost:4000/process', {
+    method: 'POST',
+    body: formData
+});
