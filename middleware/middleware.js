@@ -1,104 +1,68 @@
 const express = require('express');
-const fetch = require('node-fetch');
+const axios = require('axios');
+const multer = require('multer'); // Importar multer
+const FormData = require('form-data'); // Importar FormData
 
 const app = express();
-app.use(express.json());
 
-let instances = []; // Lista de instancias obtenidas desde el Discovery
-let roundRobinIndex = 0;
+let instances = [];
+let currentIndex = 0;
 
-// Función que implementa lo de Round-Robin
-function getNextInstance() {
-    if (instances.length === 0) {
-        return null;
+// Función para obtener las instancias del servicio de descubrimiento
+async function fetchInstances() {
+    try {
+        const response = await axios.get('http://localhost:6000/instances'); // URL del servicio de descubrimiento
+        instances = response.data.map(instance => ({
+            id: instance.id,
+            url: `http://${instance.address}:${instance.port}`
+        }));
+        console.log('Instancias actualizadas:', instances);
+    } catch (error) {
+        console.error('Error al obtener instancias del discovery:', error.message);
     }
-
-    const instance = instances[roundRobinIndex];
-    roundRobinIndex = (roundRobinIndex + 1) % instances.length;
-    return instance;
 }
 
-app.post('/process', async (req, res) => {
-    let instance = getNextInstance();
+// Inicializar las instancias cuando arranca el middleware
+fetchInstances();
+setInterval(fetchInstances, 60000); // Actualizar instancias cada 60 segundos
 
-    if (!instance) {
-        return res.status(503).send('No hay instancias disponibles');
+// Endpoint para procesar la imagen
+app.post('/process', multer().single('image'), async (req, res) => { // Usar multer aquí para recibir el archivo
+    if (instances.length === 0) {
+        return res.status(500).send('No hay instancias disponibles.');
     }
 
-    try {
-        const response = await fetch(`${instance.url}/process`, {
-            method: 'POST',
-            body: req.body,
-            headers: { 'Content-Type': 'application/json' }
-        });
+    const totalInstances = instances.length;
+    let attempts = 0;
+    let success = false;
 
-        if (!response.ok) {
-            throw new Error('Error en la instancia seleccionada');
-        }
+    // Intentar con varias instancias
+    while (attempts < totalInstances && !success) {
+        const instance = instances[currentIndex];
+        currentIndex = (currentIndex + 1) % totalInstances;
+        attempts++;
 
-        const result = await response.buffer();
-        res.type('image/png');
-        res.send(result);
-    } catch (error) {
-        console.error(`Error en la instancia ${instance.url}, intentando con otra...`);
+        try {
+            const formData = new FormData();
+            formData.append('image', req.file.buffer, { filename: req.file.originalname }); // Agregar la imagen al FormData
 
-        // Intentar con la siguiente instancia en el Round-Robin
-        const newInstance = getNextInstance();
-
-        if (newInstance) {
-            try {
-                const retryResponse = await fetch(`${newInstance.url}/process`, {
-                    method: 'POST',
-                    body: req.body,
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                if (!retryResponse.ok) {
-                    throw new Error('Error al intentar otra instancia');
+            // Enviar la solicitud al backend
+            const response = await axios.post(`${instance.url}/process`, formData, {
+                headers: {
+                    ...formData.getHeaders() // Establecer los encabezados de multipart/form-data
                 }
-
-                const retryResult = await retryResponse.buffer();
-                res.type('image/png');
-                res.send(retryResult);
-            } catch (retryError) {
-                console.error('Error en la segunda instancia:', retryError);
-                res.status(500).send('Error al procesar la imagen en ambas instancias');
-            }
-        } else {
-            res.status(500).send('No hay más instancias disponibles para procesar la imagen');
+            });
+            return res.status(response.status).send(response.data); // Respuesta exitosa
+        } catch (error) {
+            console.log(`Error en la instancia ${instance.id}: ${error.message}`);
+            continue; // Intentar con la siguiente instancia si falla
         }
     }
+
+    return res.status(500).send('No se pudo procesar la solicitud. Todas las instancias fallaron.');
 });
 
-// Registrar y desregistrar instancias
-app.post('/update-instances', (req, res) => {
-    const { action, instance } = req.body;
-
-    if (action === 'register') {
-        instances.push(instance);
-        console.log(`Instancia registrada: ${instance.id} - ${instance.url}`);
-        return res.json({ message: 'Instancia registrada con éxito' });
-    } else if (action === 'deregister') {
-        instances = instances.filter(inst => inst.id !== instance.id);
-        console.log(`Instancia eliminada: ${instance.id}`);
-        return res.json({ message: 'Instancia desregistrada con éxito' });
-    }
-
-    return res.status(400).json({ error: 'Acción no válida' });
-});
-
-setInterval(() => {
-    instances.forEach((instance, index) => {
-        fetch(`${instance.url}/healthcheck`)
-            .then(() => console.log(`Instancia ${instance.url} activa`))
-            .catch(() => {
-                console.log(`Instancia ${instance.url} no responde. Eliminándola...`);
-                instances.splice(index, 1);
-            });
-    });
-}, 60000);
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`Middleware corriendo en el puerto ${PORT}`);
+const port = 4000;
+app.listen(port, () => {
+    console.log(`Middleware corriendo en el puerto ${port}`);
 });
