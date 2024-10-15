@@ -14,12 +14,12 @@ let currentIndex = 0;
 
 async function fetchInstances() {
     try {
-        const response = await axios.get('http://localhost:6000/instances'); 
+        const response = await axios.get('http://localhost:6000/instances');
         instances = response.data
-            .filter(instance => instance.status === 'healthy') 
+            .filter(instance => instance.status === 'healthy')
             .map(instance => ({
                 id: instance.id,
-                url: `http://${instance.address}:${instance.port}`
+                url: `http://${instance.hostIp}:${instance.port}` // Utiliza la IP del host
             }));
         console.log('Instancias saludables actualizadas:', instances);
     } catch (error) {
@@ -29,7 +29,7 @@ async function fetchInstances() {
 
 
 fetchInstances();
-setInterval(fetchInstances, 60000); 
+setInterval(fetchInstances, 60000);
 
 app.post('/process', upload.single('image'), async (req, res) => {
     if (instances.length === 0) {
@@ -54,16 +54,16 @@ app.post('/process', upload.single('image'), async (req, res) => {
                 headers: {
                     ...formData.getHeaders()
                 },
-                responseType: 'arraybuffer', 
+                responseType: 'arraybuffer',
                 timeout: 5000
             });
 
-            const contentType = response.headers['content-type']; 
-            res.setHeader('Content-Type', contentType); 
-            return res.status(response.status).send(Buffer.from(response.data)); 
+            const contentType = response.headers['content-type'];
+            res.setHeader('Content-Type', contentType);
+            return res.status(response.status).send(Buffer.from(response.data));
         } catch (error) {
             console.log(`Error en la instancia ${instance.id}: ${error.message}`);
-            await new Promise(resolve => setTimeout(resolve, 1000)); 
+            await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
         }
     }

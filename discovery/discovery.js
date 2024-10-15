@@ -1,16 +1,16 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-
 const { exec } = require('child_process');
 const Docker = require('dockerode');
-const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 const WebSocket = require('ws');
 
-
+const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 const app = express();
 app.use(cors()); 
 app.use(express.json());
+
+const HEALTH_THRESHOLD = 2000;
 
 let backends = [];
 let serverHistory = {};  // Guardará el historial de estado de cada instancia
@@ -30,13 +30,13 @@ const sendStatusToClients = () => {
 
 // Registrar instancias backend
 app.post('/register', (req, res) => {
-    const { id, address, port } = req.body;
+    const { id, address, port, hostIp } = req.body; // Añadimos 'hostIp' para almacenar el host donde está el contenedor
 
     const exists = backends.some(backend => backend.id === id);
     if (!exists) {
-        backends.push({ id, address, port, status: 'unknown', lastCheck: null });
+        backends.push({ id, address, port, hostIp, status: 'unknown', lastCheck: null });
         serverHistory[id] = [];  // Inicializa el historial de esta instancia
-        console.log(`Backend registrado: ${id} en ${address}:${port}`);
+        console.log(`Backend registrado: ${id} en ${address}:${port}, Host IP: ${hostIp}`);
     }
     res.status(200).send('Instancia registrada');
 });
@@ -46,20 +46,45 @@ app.get('/instances', (req, res) => {
     res.json(backends);
 });
 
+// Función para manejar instancias no saludables
+async function handleUnhealthyInstance(instance) {
+    console.log(`Instance ${instance.id} is unhealthy, creating a new one...`);
+    try {
+        const response = await axios.post(`${process.env.DISCOVERY_URL}/create-instance`, { instanceId: instance.id });
+        console.log(`New instance created to replace ${instance.id}`);
+    } catch (error) {
+        console.error(`Error creating new instance: ${error.message}`);
+    }
+}
+
 // Función para realizar health checks periódicos
 const checkHealth = async () => {
     for (let backend of backends) {
+        const start = Date.now();
         try {
             const response = await axios.get(`http://${backend.address}:${backend.port}/health`);
-            backend.status = response.status === 200 ? 'healthy' : 'unhealthy';
+            const responseTime = Date.now() - start;
+
+            if (response.status === 200 && responseTime <= HEALTH_THRESHOLD) {
+                backend.status = 'healthy';
+                console.log(`Estado de ${backend.id}: healthy (Tiempo de respuesta: ${responseTime}ms)`);
+            } else if (responseTime > HEALTH_THRESHOLD) {
+                backend.status = 'unhealthy';
+                console.log(`Estado de ${backend.id}: unhealthy (Tiempo de respuesta excedido: ${responseTime}ms)`);
+                await handleUnhealthyInstance(backend); // Crear nueva instancia si es unhealthy
+            }
         } catch (error) {
             backend.status = 'unhealthy';
+            console.log(`Estado de ${backend.id}: unhealthy (No respondió)`);
+            await handleUnhealthyInstance(backend); // Crear nueva instancia si es unhealthy
         }
+
         backend.lastCheck = new Date().toISOString();
 
         // Guardar el historial de estado
         serverHistory[backend.id].push({
             status: backend.status,
+            responseTime: Date.now() - start, // Guardar el tiempo de respuesta
             timestamp: backend.lastCheck
         });
 
@@ -67,7 +92,6 @@ const checkHealth = async () => {
         if (serverHistory[backend.id].length > 50) {
             serverHistory[backend.id].shift();
         }
-        console.log(`Estado de ${backend.id}: ${backend.status}`);
     }
 
     // Enviar la actualización de estado a los clientes WebSocket
@@ -104,6 +128,7 @@ app.post('/create-instance', (req, res) => {
 
             // Registrar la nueva instancia
             backends.push({ id, address, port, status: 'healthy', lastCheck: new Date().toISOString() });
+            serverHistory[id] = []; // Inicializa el historial de esta nueva instancia
             res.status(200).send('Instancia creada y registrada con éxito');
         });
     });
