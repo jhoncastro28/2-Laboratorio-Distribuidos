@@ -3,7 +3,6 @@ const express = require('express');
 const axios = require('axios');
 const multer = require('multer');
 const cors = require('cors');
-const { triggerChaosEngineering } = require('./chaosService');
 
 const { addWatermark } = require('./watermarkService');
 
@@ -45,15 +44,6 @@ const registerInstance = async () => {
 };
 
 registerInstance();
-
-app.post('/trigger-chaos', async (req, res) => {
-    try {
-        await triggerChaosEngineering();
-        res.status(200).send('Ingeniería de caos ejecutada con éxito.');
-    } catch (error) {
-        res.status(500).send('Error al ejecutar ingeniería de caos: ' + error.message);
-    }
-});
 
 const PORT = process.env.PORT || 3004;
 app.listen(PORT, () => {

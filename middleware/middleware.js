@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const multer = require('multer'); // Para recibir la imagen desde el cliente
@@ -6,6 +7,8 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
+
+const PORT = process.env.PORT || 4000;
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -71,7 +74,17 @@ app.post('/process', upload.single('image'), async (req, res) => {
     return res.status(500).send('No se pudo procesar la solicitud. Todas las instancias fallaron.');
 });
 
-const port = 4000;
-app.listen(port, () => {
-    console.log(`Middleware corriendo en el puerto ${port}`);
+app.post('/trigger-chaos', async (req, res) => {
+    try {
+        // Ejecutar el caos desde el Middleware
+        await triggerChaosEngineering();
+        res.status(200).send('Ingeniería de caos ejecutada con éxito.');
+    } catch (error) {
+        console.error('Error al ejecutar ingeniería de caos:', error.message);
+        res.status(500).send('Error al ejecutar ingeniería de caos: ' + error.message);
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Middleware corriendo en el puerto ${PORT}`);
 });

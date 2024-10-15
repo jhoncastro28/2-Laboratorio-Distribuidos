@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -5,12 +6,14 @@ const { exec } = require('child_process');
 const Docker = require('dockerode');
 const WebSocket = require('ws');
 
-const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+const docker = new Docker();
 const app = express();
 app.use(cors()); 
 app.use(express.json());
 
 const HEALTH_THRESHOLD = 2000;
+const hostIp = process.env.HOST_IP || 'localhost';
+const PORT = process.env.PORT || 6000;
 
 let backends = [];
 let serverHistory = {};  // Guardará el historial de estado de cada instancia
@@ -30,7 +33,7 @@ const sendStatusToClients = () => {
 
 // Registrar instancias backend
 app.post('/register', (req, res) => {
-    const { id, address, port, hostIp } = req.body; // Añadimos 'hostIp' para almacenar el host donde está el contenedor
+    const { id, address, port } = req.body;
 
     const exists = backends.some(backend => backend.id === id);
     if (!exists) {
@@ -144,7 +147,7 @@ app.get('/instances/:id/history', (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 6000;
+
 app.listen(PORT, () => {
     console.log(`Servicio de Discovery corriendo en el puerto ${PORT}`);
 });

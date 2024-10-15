@@ -1,9 +1,7 @@
 const Docker = require('dockerode');
-const docker = new Docker(); // Esto mientras Docker esté corriendo localmente
 
-// La URL del Docker remoto, o local si no se especifica. Cuando ya tengamos el sistema Distribuído
-//const dockerHost = process.env.DOCKER_HOST || 'http://localhost:2375';
-//const docker = new Docker({ host: dockerHost, port: 2375 });
+const dockerHost = process.env.DOCKER_HOST || 'http://localhost:2375';
+const docker = new Docker({ host: dockerHost, port: 2375 });
 
 const getRandomInstance = async () => {
     try {
