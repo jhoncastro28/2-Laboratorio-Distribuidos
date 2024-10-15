@@ -11,7 +11,7 @@ const app = express();
 app.use(cors()); 
 app.use(express.json());
 
-const HEALTH_THRESHOLD = 2000;
+const HEALTH_THRESHOLD = 10000;
 const hostIp = process.env.HOST_IP || 'localhost';
 const PORT = process.env.PORT || 6000;
 
