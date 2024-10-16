@@ -16,8 +16,8 @@ COPY . .
 # Copia el archivo .env al contenedor
 COPY .env .env
 
-# Expone el puerto que se definirá en el archivo .env (por defecto 3004)
-EXPOSE ${PORT}
+# Expone un puerto genérico
+EXPOSE 3004
 
 # Define la variable de entorno para que utilice el puerto definido en .env
 ENV PORT=${PORT}

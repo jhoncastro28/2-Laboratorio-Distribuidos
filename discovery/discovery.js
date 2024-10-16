@@ -11,7 +11,7 @@ const app = express();
 app.use(cors()); 
 app.use(express.json());
 
-const HEALTH_THRESHOLD = 10000;
+const HEALTH_THRESHOLD = 15000;
 const hostIp = process.env.HOST_IP || 'localhost';
 const PORT = process.env.PORT || 6000;
 
@@ -34,6 +34,8 @@ const sendStatusToClients = () => {
 // Registrar instancias backend
 app.post('/register', (req, res) => {
     const { id, address, port } = req.body;
+    console.log(`Intento de registro: ID=${id}, Address=${address}, Port=${port}`);
+    
     const exists = backends.some(backend => backend.id === id);
     if (!exists) {
       backends.push({ 
@@ -45,48 +47,69 @@ app.post('/register', (req, res) => {
       });
       serverHistory[id] = [];
       console.log(`Backend registrado: ${id} en ${address}:${port}`);
+    } else {
+      console.log(`Backend ya existente: ${id}. Actualizando información.`);
+      const index = backends.findIndex(backend => backend.id === id);
+      backends[index] = {
+        ...backends[index],
+        address: address === 'host.docker.internal' ? 'localhost' : address,
+        port
+      };
     }
     res.status(200).send('Instancia registrada');
   });
-// Obtener instancias
-app.get('/instances', (req, res) => {
-    res.json(backends);
-});
 
 // Función para manejar instancias no saludables
 async function handleUnhealthyInstance(instance) {
-    console.log(`Instance ${instance.id} is unhealthy, creating a new one...`);
-    try {
-        const response = await axios.post(`${process.env.DISCOVERY_URL}/create-instance`, { instanceId: instance.id });
-        console.log(`New instance created to replace ${instance.id}`);
-    } catch (error) {
+    console.log(`Instance ${instance.id} is unhealthy, removing it and creating a new one...`);
+    backends = backends.filter(b => b.id !== instance.id);
+    delete serverHistory[instance.id];
+  
+    const usedPorts = backends.map(b => parseInt(b.port));
+    let nextPort = 3004;
+    while (usedPorts.includes(nextPort)) nextPort++;
+  
+    // Ejecuta el comando Docker para crear una nueva instancia
+    const command = `docker run -d -p ${nextPort}:3004 -e HOST_PORT=${nextPort} --env-file .env --name backend_instance_${nextPort} mi_backend`;
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
         console.error(`Error creating new instance: ${error.message}`);
-    }
-}
+        return;
+      }
+      if (stderr) {
+        console.error(`stderr: ${stderr}`);
+        return;
+      }
+      console.log(`New instance created on port ${nextPort}`);
+    });
+  }
 
 // Función para realizar health checks periódicos
 const checkHealth = async () => {
+    console.log(`Checking health of ${backends.length} backends`);
     for (let backend of backends) {
       const start = Date.now();
       try {
-        const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { timeout: 5000 });
+        const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { 
+          timeout: 5000,
+        });
         const responseTime = Date.now() - start;
   
         if (response.status === 200 && responseTime <= HEALTH_THRESHOLD) {
           backend.status = 'healthy';
-          console.log(`Estado de ${backend.id}: healthy (Tiempo de respuesta: ${responseTime}ms)`);
+          console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): healthy (Tiempo de respuesta: ${responseTime}ms)`);
         } else if (responseTime > HEALTH_THRESHOLD) {
           backend.status = 'unhealthy';
-          console.log(`Estado de ${backend.id}: unhealthy (Tiempo de respuesta excedido: ${responseTime}ms)`);
+          console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (Tiempo de respuesta excedido: ${responseTime}ms)`);
           await handleUnhealthyInstance(backend);
         }
       } catch (error) {
         backend.status = 'unhealthy';
-        console.log(`Estado de ${backend.id}: unhealthy (No respondió)`);
+        console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (${error.message})`);
         await handleUnhealthyInstance(backend);
       }
-
-        backend.lastCheck = new Date().toISOString();
+  
+      backend.lastCheck = new Date().toISOString();
 
         // Guardar el historial de estado
         serverHistory[backend.id].push({
@@ -110,7 +133,7 @@ setInterval(checkHealth, 30000);
 
 // Crear una nueva instancia con Docker y registrarla automáticamente
 app.post('/create-instance', (req, res) => {
-    const port = 3000 + backends.length;
+    const port = 3006 + backends.length;
 
     docker.createContainer({
         Image: 'mi_backend', // Cambiar con el nombre correcto de la imagen
@@ -150,7 +173,9 @@ app.get('/instances/:id/history', (req, res) => {
         res.status(404).send('Instancia no encontrada');
     }
 });
-
+app.get('/instances', (req, res) => {
+    res.json(backends); 
+  });
 
 app.listen(PORT, () => {
     console.log(`Servicio de Discovery corriendo en el puerto ${PORT}`);

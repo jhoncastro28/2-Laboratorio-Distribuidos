@@ -32,16 +32,18 @@ app.get('/health', (req, res) => {
 
 const registerInstance = async () => {
     try {
-        await axios.post(`${process.env.DISCOVERY_URL}/register`, {
-            id: process.env.INSTANCE_ID,
-            address: process.env.ADDRESS_IP,
-            port: process.env.PORT
-        });
-        console.log('Instancia registrada en el discovery');
+      const hostPort = process.env.HOST_PORT || process.env.PORT;
+      const instanceId = `backend-${hostPort}`; 
+      await axios.post(`${process.env.DISCOVERY_URL}/register`, {
+        id: instanceId,
+        address: process.env.ADDRESS_IP,
+        port: hostPort
+      });
+      console.log(`Instancia registrada en el discovery con ID ${instanceId} y puerto ${hostPort}`);
     } catch (error) {
-        console.error('Error al registrar instancia en el discovery:', error.message);
+      console.error('Error al registrar instancia en el discovery:', error.message);
     }
-};
+  };
 
 registerInstance();
 

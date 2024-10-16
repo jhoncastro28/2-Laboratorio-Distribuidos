@@ -22,13 +22,15 @@ async function fetchInstances() {
         .filter(instance => instance.status === 'healthy')
         .map(instance => ({
           id: instance.id,
-          url: `http://${instance.address}:${instance.port}` 
+          url: `http://${instance.address}:${instance.port}`
         }));
+      console.log('Todas las instancias:', response.data);
       console.log('Instancias saludables actualizadas:', instances);
     } catch (error) {
       console.error('Error al obtener instancias del discovery:', error.message);
     }
   }
+  
 
 
 fetchInstances();
