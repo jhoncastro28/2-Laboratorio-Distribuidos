@@ -1,0 +1,26 @@
+# Usa una imagen base oficial de Node.js
+FROM node:14
+
+# Establece el directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copia el archivo package.json y package-lock.json
+COPY package*.json ./
+
+# Instala las dependencias
+RUN npm install
+
+# Copia el resto del código de la aplicación al contenedor
+COPY . .
+
+# Copia el archivo .env al contenedor
+COPY .env .env
+
+# Expone el puerto que se definirá en el archivo .env (por defecto 3004)
+EXPOSE ${PORT}
+
+# Define la variable de entorno para que utilice el puerto definido en .env
+ENV PORT=${PORT}
+
+# Comando para correr la aplicación
+CMD ["node", "server.js"]

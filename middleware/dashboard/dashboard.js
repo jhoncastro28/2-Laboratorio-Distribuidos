@@ -85,3 +85,20 @@ const chart = new Chart(ctx, {
         }
     }
 });
+
+// Botón para ejecutar la ingeniería de caos
+document.getElementById('chaosButton').addEventListener('click', async () => {
+    try {
+        const response = await fetch('http://localhost:4000/trigger-chaos', {
+            method: 'POST',
+        });
+        if (response.ok) {
+            alert('Ingeniería de caos ejecutada con éxito.');
+        } else {
+            alert('Error al ejecutar ingeniería de caos.');
+        }
+    } catch (error) {
+        console.error('Error al activar caos:', error);
+        alert('Error al activar caos.');
+    }
+});
