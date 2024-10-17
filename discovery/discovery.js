@@ -203,42 +203,31 @@ app.get('/instances/:id/requests', (req, res) => {
     const instanceId = req.params.id;
     console.log(`Solicitando historial de peticiones para la instancia: ${instanceId}`);
     
-    if (requestHistory[instanceId]) {
+    if (requestHistory[instanceId] && requestHistory[instanceId].length > 0) {
         console.log(`Historial encontrado. Número de peticiones: ${requestHistory[instanceId].length}`);
         res.json(requestHistory[instanceId]);
     } else {
         console.log(`No se encontró historial para la instancia: ${instanceId}`);
-        res.status(404).json({ message: 'Historial de peticiones no encontrado para esta instancia' });
+        res.json([]); // Enviamos un array vacío en lugar de un 404
     }
 });
 
-// Endpoint para registrar una nueva petición para una instancia específica
-app.post('/instances/:id/requests', (req, res) => {
+app.post('/instances/:id/requests', express.json(), (req, res) => {
     const instanceId = req.params.id;
-    const { type, payload, response, url } = req.body;
-  
+    const newRequest = req.body;
+    
     if (!requestHistory[instanceId]) {
         requestHistory[instanceId] = [];
     }
-  
-    const newRequest = {
-        type,
-        payload,
-        date: new Date().toISOString(),
-        response,
-        url
-    };
-  
-    requestHistory[instanceId].push(newRequest);
-  
-    // Limitar el historial a las últimas 50 entradas
-    if (requestHistory[instanceId].length > 50) {
-        requestHistory[instanceId].shift();
-    }
-  
-    res.status(200).send('Petición registrada con éxito');
+    
+    requestHistory[instanceId].push({
+        ...newRequest,
+        date: new Date().toISOString()
+    });
+    
+    console.log(`Nueva petición registrada para la instancia ${instanceId}`);
+    res.status(201).json({ message: 'Petición registrada con éxito' });
 });
-
 
 // Endpoint para obtener todas las instancias
 app.get('/instances', (req, res) => {

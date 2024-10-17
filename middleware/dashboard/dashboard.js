@@ -1,11 +1,22 @@
 // Conectar con el WebSocket del servicio de Discovery
 const ws = new WebSocket('ws://localhost:8080');
 
+let selectedInstanceId = null;
+
 // Al recibir actualizaciones de WebSocket
 ws.onmessage = function(event) {
     const data = JSON.parse(event.data);
     updateServerTable(data);
     populateInstanceFilter(data);
+    
+    // Si hay una instancia seleccionada, actualizar su información
+    if (selectedInstanceId) {
+        const selectedInstance = data.find(server => server.id === selectedInstanceId);
+        if (selectedInstance) {
+            updateInstanceHistory(selectedInstanceId);
+            fetchAndDisplayRequests(selectedInstanceId);
+        }
+    }
 };
 
 // Actualizar la tabla de servidores con las nuevas instancias o cambios de estado
@@ -26,12 +37,18 @@ function updateServerTable(servers) {
 // Poblar el filtro de instancias
 function populateInstanceFilter(servers) {
     const instanceFilter = document.getElementById('instance-filter');
+    const currentValue = instanceFilter.value;
     instanceFilter.innerHTML = '<option value="">Seleccione una instancia</option>';
     
     servers.forEach(server => {
         const option = `<option value="${server.id}">${server.id}</option>`;
         instanceFilter.insertAdjacentHTML('beforeend', option);
     });
+
+    // Mantener la selección actual si aún existe
+    if (currentValue && servers.some(server => server.id === currentValue)) {
+        instanceFilter.value = currentValue;
+    }
 }
 
 // Botón para crear una nueva instancia
@@ -44,7 +61,6 @@ document.getElementById('create-instance-btn').addEventListener('click', async f
             throw new Error('Error al crear instancia');
         }
         alert('Instancia creada con éxito');
-        refreshServerStatus();
     } catch (error) {
         alert('Error al crear la instancia: ' + error.message);
     }
@@ -52,10 +68,10 @@ document.getElementById('create-instance-btn').addEventListener('click', async f
 
 // Cargar el historial del estado de una instancia específica
 document.getElementById('instance-filter').addEventListener('change', async function() {
-    const instanceId = this.value;
-    if (instanceId) {
-        await updateInstanceHistory(instanceId);
-        await fetchAndDisplayRequests(instanceId);
+    selectedInstanceId = this.value;
+    if (selectedInstanceId) {
+        await updateInstanceHistory(selectedInstanceId);
+        await fetchAndDisplayRequests(selectedInstanceId);
     } else {
         clearRequestsTable();
         clearHistoryChart();
@@ -86,7 +102,12 @@ async function fetchAndDisplayRequests(instanceId) {
             throw new Error('Error al obtener las peticiones');
         }
         const requests = await response.json();
-        updateRequestsTable(requests);
+        console.log('Peticiones recibidas:', requests); // Agregamos este log para depuración
+        if (Array.isArray(requests)) {
+            updateRequestsTable(requests);
+        } else {
+            throw new Error('La respuesta no es un array');
+        }
     } catch (error) {
         console.error('Error:', error);
         clearRequestsTable();
@@ -106,11 +127,11 @@ function updateRequestsTable(requests) {
 
     requests.forEach(request => {
         const row = `<tr>
-            <td>${request.type}</td>
-            <td>${request.payload}</td>
+            <td>${request.type || 'N/A'}</td>
+            <td>${request.payload || 'N/A'}</td>
             <td>${new Date(request.date).toLocaleString()}</td>
-            <td>${request.response}</td>
-            <td>${request.url}</td>
+            <td>${request.response || 'N/A'}</td>
+            <td>${request.url || 'N/A'}</td>
         </tr>`;
         requestsBody.insertAdjacentHTML('beforeend', row);
     });
@@ -131,102 +152,102 @@ function updateHistoryChart(historyData) {
         window.statusChart.destroy();
     }
 
-     // Preparar los datos para el gráfico
-     const labels = historyData.map(entry => new Date(entry.timestamp).toLocaleString());
-     const statusData = historyData.map(entry => entry.status === 'healthy' ? 1 : 0);
-     const responseTimeData = historyData.map(entry => entry.responseTime);
+    // Preparar los datos para el gráfico
+    const labels = historyData.map(entry => new Date(entry.timestamp).toLocaleString());
+    const statusData = historyData.map(entry => entry.status === 'healthy' ? 1 : 0);
+    const responseTimeData = historyData.map(entry => entry.responseTime);
 
-// Crear el gráfico usando Chart.js
-window.statusChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: labels,
-        datasets: [
-            {
-                label: 'Estado',
-                data: statusData,
-                borderColor: 'rgba(75, 192, 192, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                yAxisID: 'y-axis-1',
-                stepped: true
-            },
-            {
-                label: 'Tiempo de Respuesta (ms)',
-                data: responseTimeData,
-                borderColor: 'rgba(255, 99, 132, 1)',
-                backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                yAxisID: 'y-axis-2',
-                type: 'line'
-            }
-        ]
-    },
-    options: {
-        responsive: true,
-        interaction: {
-            mode: 'index',
-            intersect: false,
+    // Crear el gráfico usando Chart.js
+    window.statusChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Estado',
+                    data: statusData,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    yAxisID: 'y-axis-1',
+                    stepped: true
+                },
+                {
+                    label: 'Tiempo de Respuesta (ms)',
+                    data: responseTimeData,
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    yAxisID: 'y-axis-2',
+                    type: 'line'
+                }
+            ]
         },
-        stacked: false,
-        scales: {
-            x: {
-                title: {
-                    display: true,
-                    text: 'Tiempo'
+        options: {
+            responsive: true,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            stacked: false,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Tiempo'
+                    }
+                },
+                'y-axis-1': {
+                    type: 'category',
+                    labels: ['Unhealthy', 'Healthy'],
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Estado'
+                    }
+                },
+                'y-axis-2': {
+                    type: 'linear',
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Tiempo de Respuesta (ms)'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
                 }
             },
-            'y-axis-1': {
-                type: 'category',
-                labels: ['Unhealthy', 'Healthy'],
-                position: 'left',
-                title: {
-                    display: true,
-                    text: 'Estado'
-                }
-            },
-            'y-axis-2': {
-                type: 'linear',
-                position: 'right',
-                title: {
-                    display: true,
-                    text: 'Tiempo de Respuesta (ms)'
-                },
-                grid: {
-                    drawOnChartArea: false,
-                },
-            }
-        },
-        plugins: {
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        let label = context.dataset.label || '';
-                        if (label === 'Estado') {
-                            return `Estado: ${context.parsed.y === 1 ? 'Healthy' : 'Unhealthy'}`;
-                        } else {
-                            return `Tiempo de Respuesta: ${context.parsed.y} ms`;
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label === 'Estado') {
+                                return `Estado: ${context.parsed.y === 1 ? 'Healthy' : 'Unhealthy'}`;
+                            } else {
+                                return `Tiempo de Respuesta: ${context.parsed.y} ms`;
+                            }
                         }
                     }
+                },
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: true,
+                    text: 'Historial de Estado y Tiempo de Respuesta'
                 }
-            },
-            legend: {
-                position: 'top',
-            },
-            title: {
-                display: true,
-                text: 'Historial de Estado y Tiempo de Respuesta'
             }
         }
-    }
-});
+    });
 }
 
 // Función para limpiar el gráfico de historial
 function clearHistoryChart() {
-if (window.statusChart) {
-    window.statusChart.destroy();
-}
-const ctx = document.getElementById('status-chart').getContext('2d');
-ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    if (window.statusChart) {
+        window.statusChart.destroy();
+    }
+    const ctx = document.getElementById('status-chart').getContext('2d');
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 }
 
 // Botón para ejecutar la ingeniería de caos
@@ -246,31 +267,3 @@ document.getElementById('chaosButton').addEventListener('click', async () => {
     }
 });
 
-// Función para refrescar el estado de los servidores
-async function refreshServerStatus() {
-    try {
-        const response = await fetch('http://localhost:6001/instances');
-        if (!response.ok) {
-            throw new Error('Error al obtener el estado de los servidores');
-        }
-        const servers = await response.json();
-        updateServerTable(servers);
-        populateInstanceFilter(servers);
-    } catch (error) {
-        console.error('Error:', error);
-        alert('Error al actualizar el estado de los servidores: ' + error.message);
-    }
-}
-
-// Llamar a refreshServerStatus al cargar la página
-refreshServerStatus();
-
-// Actualizar datos cada 30 segundos
-setInterval(async () => {
-    const instanceId = document.getElementById('instance-filter').value;
-    if (instanceId) {
-        await updateInstanceHistory(instanceId);
-        await fetchAndDisplayRequests(instanceId);
-    }
-    refreshServerStatus();
-}, 30000);
