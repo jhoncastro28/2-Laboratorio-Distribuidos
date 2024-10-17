@@ -13,13 +13,14 @@ app.use(express.json());
 
 const HEALTH_THRESHOLD = 15000;
 const hostIp = process.env.HOST_IP || 'localhost';
-const PORT = process.env.PORT || 6000;
+const PORT = process.env.PORT || 6001;
 
 let backends = [];
 let serverHistory = {};  // Guardará el historial de estado de cada instancia
+let requestHistory = {}; // Guardará el historial de peticiones de cada instancia
 
 // Inicializar WebSocket Server
-const wss = new WebSocket.Server({ port: 8080 });  // WebSocket en el puerto 8080
+const wss = new WebSocket.Server({ port: 8080 });
 
 // Función para enviar actualizaciones de estado a los clientes WebSocket
 const sendStatusToClients = () => {
@@ -38,99 +39,103 @@ app.post('/register', (req, res) => {
     
     const exists = backends.some(backend => backend.id === id);
     if (!exists) {
-      backends.push({ 
-        id, 
-        address: address === 'host.docker.internal' ? 'localhost' : address, 
-        port, 
-        status: 'unknown', 
-        lastCheck: null 
-      });
-      serverHistory[id] = [];
-      console.log(`Backend registrado: ${id} en ${address}:${port}`);
+        backends.push({ 
+            id, 
+            address: address === 'host.docker.internal' ? 'localhost' : address, 
+            port, 
+            status: 'unknown', 
+            lastCheck: null 
+        });
+        serverHistory[id] = [];
+        requestHistory[id] = []; // Inicializar el historial de peticiones para la nueva instancia
+        console.log(`Backend registrado: ${id} en ${address}:${port}`);
     } else {
-      console.log(`Backend ya existente: ${id}. Actualizando información.`);
-      const index = backends.findIndex(backend => backend.id === id);
-      backends[index] = {
-        ...backends[index],
-        address: address === 'host.docker.internal' ? 'localhost' : address,
-        port
-      };
+        console.log(`Backend ya existente: ${id}. Actualizando información.`);
+        const index = backends.findIndex(backend => backend.id === id);
+        backends[index] = {
+            ...backends[index],
+            address: address === 'host.docker.internal' ? 'localhost' : address,
+            port
+        };
     }
     res.status(200).send('Instancia registrada');
 });
 
 // Función para manejar instancias no saludables
 async function handleUnhealthyInstance(instance) {
-    console.log(`Instance ${instance.id} is unhealthy, removing it and creating a new one...`);
-    backends = backends.filter(b => b.id !== instance.id);
-    delete serverHistory[instance.id];
+  console.log(`Instance ${instance.id} is unhealthy`);
   
-    const usedPorts = backends.map(b => parseInt(b.port));
-    let nextPort = 3004;
-    while (usedPorts.includes(nextPort)) nextPort++;
+  // En lugar de eliminar la instancia, simplemente actualizamos su estado
+  const index = backends.findIndex(b => b.id === instance.id);
+  if (index !== -1) {
+      backends[index].status = 'unhealthy';
+      backends[index].lastCheck = new Date().toISOString();
+      
+      // Agregar esta entrada al historial
+      if (!serverHistory[instance.id]) {
+          serverHistory[instance.id] = [];
+      }
+      serverHistory[instance.id].push({
+          status: 'unhealthy',
+          timestamp: backends[index].lastCheck,
+          responseTime: HEALTH_THRESHOLD // Asumimos el peor caso
+      });
+      
+      // Limitar el historial a las últimas 50 entradas
+      if (serverHistory[instance.id].length > 50) {
+          serverHistory[instance.id].shift();
+      }
+  }
   
-    // Ejecuta el comando Docker para crear una nueva instancia
-    const command = `docker run -d -p ${nextPort}:3004 -e HOST_PORT=${nextPort} --env-file .env --name backend_instance_${nextPort} mi_backend`;
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error creating new instance: ${error.message}`);
-        return;
-      }
-      if (stderr) {
-        console.error(`stderr: ${stderr}`);
-        return;
-      }
-      console.log(`New instance created on port ${nextPort}`);
-
-      // Registro de la nueva instancia después de la creación
-      registerInstance(nextPort);
-    });
+  // No creamos una nueva instancia aquí
+  console.log(`Updated status of instance ${instance.id} to unhealthy`);
 }
 
 // Función para realizar health checks periódicos
 const checkHealth = async () => {
-    console.log(`Checking health of ${backends.length} backends`);
-    for (let backend of backends) {
+  console.log(`Checking health of ${backends.length} backends`);
+  for (let backend of backends) {
       const start = Date.now();
       try {
-        const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { 
-          timeout: 5000,
-        });
-        const responseTime = Date.now() - start;
-  
-        if (response.status === 200 && responseTime <= HEALTH_THRESHOLD) {
-          backend.status = 'healthy';
-          console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): healthy (Tiempo de respuesta: ${responseTime}ms)`);
-        } else if (responseTime > HEALTH_THRESHOLD) {
-          backend.status = 'unhealthy';
-          console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (Tiempo de respuesta excedido: ${responseTime}ms)`);
-          await handleUnhealthyInstance(backend);
-        }
+          const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { 
+              timeout: 5000,
+          });
+          const responseTime = Date.now() - start;
+
+          if (response.status === 200 && responseTime <= HEALTH_THRESHOLD) {
+              backend.status = 'healthy';
+              console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): healthy (Tiempo de respuesta: ${responseTime}ms)`);
+          } else {
+              backend.status = 'unhealthy';
+              console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (Tiempo de respuesta excedido: ${responseTime}ms)`);
+              await handleUnhealthyInstance(backend);
+          }
       } catch (error) {
-        backend.status = 'unhealthy';
-        console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (${error.message})`);
-        await handleUnhealthyInstance(backend);
+          backend.status = 'unhealthy';
+          console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (${error.message})`);
+          await handleUnhealthyInstance(backend);
       }
-  
+
       backend.lastCheck = new Date().toISOString();
 
-      // Guardar el historial de estado solo si la instancia aún existe en serverHistory
-      if (serverHistory[backend.id]) {
-        serverHistory[backend.id].push({
-          status: backend.status,
-          responseTime: Date.now() - start, // Guardar el tiempo de respuesta
-          timestamp: backend.lastCheck
-        });
-
-        // Limitar el historial a las últimas 50 entradas
-        if (serverHistory[backend.id].length > 50) {
-          serverHistory[backend.id].shift();
-        }
+      // Guardar el historial de estado
+      if (!serverHistory[backend.id]) {
+          serverHistory[backend.id] = [];
       }
-    }
+      serverHistory[backend.id].push({
+          status: backend.status,
+          responseTime: Date.now() - start,
+          timestamp: backend.lastCheck
+      });
 
-    // Enviar la actualización de estado a los clientes WebSocket
-    sendStatusToClients();
+      // Limitar el historial a las últimas 50 entradas
+      if (serverHistory[backend.id].length > 50) {
+          serverHistory[backend.id].shift();
+      }
+  }
+
+  // Enviar la actualización de estado a los clientes WebSocket
+  sendStatusToClients();
 };
 
 // Hacer health checks cada 30 segundos
@@ -192,6 +197,48 @@ app.get('/instances/:id/history', (req, res) => {
         res.status(404).send('Instancia no encontrada');
     }
 });
+
+// Endpoint para obtener el historial de peticiones de una instancia específica
+app.get('/instances/:id/requests', (req, res) => {
+    const instanceId = req.params.id;
+    console.log(`Solicitando historial de peticiones para la instancia: ${instanceId}`);
+    
+    if (requestHistory[instanceId]) {
+        console.log(`Historial encontrado. Número de peticiones: ${requestHistory[instanceId].length}`);
+        res.json(requestHistory[instanceId]);
+    } else {
+        console.log(`No se encontró historial para la instancia: ${instanceId}`);
+        res.status(404).json({ message: 'Historial de peticiones no encontrado para esta instancia' });
+    }
+});
+
+// Endpoint para registrar una nueva petición para una instancia específica
+app.post('/instances/:id/requests', (req, res) => {
+    const instanceId = req.params.id;
+    const { type, payload, response, url } = req.body;
+  
+    if (!requestHistory[instanceId]) {
+        requestHistory[instanceId] = [];
+    }
+  
+    const newRequest = {
+        type,
+        payload,
+        date: new Date().toISOString(),
+        response,
+        url
+    };
+  
+    requestHistory[instanceId].push(newRequest);
+  
+    // Limitar el historial a las últimas 50 entradas
+    if (requestHistory[instanceId].length > 50) {
+        requestHistory[instanceId].shift();
+    }
+  
+    res.status(200).send('Petición registrada con éxito');
+});
+
 
 // Endpoint para obtener todas las instancias
 app.get('/instances', (req, res) => {
