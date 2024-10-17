@@ -17,21 +17,19 @@ let currentIndex = 0;
 
 async function fetchInstances() {
     try {
-      const response = await axios.get(`${process.env.DISCOVERY_URL}/instances`);
-      instances = response.data
-        .filter(instance => instance.status === 'healthy')
-        .map(instance => ({
-          id: instance.id,
-          url: `http://${instance.address}:${instance.port}`
-        }));
-      console.log('Todas las instancias:', response.data);
-      console.log('Instancias saludables actualizadas:', instances);
+        const response = await axios.get(`${process.env.DISCOVERY_URL}/instances`);
+        instances = response.data
+            .filter(instance => instance.status === 'healthy')
+            .map(instance => ({
+                id: instance.id,
+                url: `http://${instance.address}:${instance.port}`
+            }));
+        console.log('Todas las instancias:', response.data);
+        console.log('Instancias saludables actualizadas:', instances);
     } catch (error) {
-      console.error('Error al obtener instancias del discovery:', error.message);
+        console.error('Error al obtener instancias del discovery:', error.message);
     }
-  }
-  
-
+}
 
 fetchInstances();
 setInterval(fetchInstances, 30000);
@@ -65,16 +63,47 @@ app.post('/process', upload.single('image'), async (req, res) => {
 
             const contentType = response.headers['content-type'];
             res.setHeader('Content-Type', contentType);
-            return res.status(response.status).send(Buffer.from(response.data));
+            res.status(response.status).send(Buffer.from(response.data));
+
+            // Registrar la petición en el Discovery
+            await registerRequest(instance.id, {
+                type: 'POST',
+                payload: 'Image Processing Request',
+                response: 'Success',
+                url: `${instance.url}/process`
+            });
+
+            success = true;
         } catch (error) {
             console.log(`Error en la instancia ${instance.id}: ${error.message}`);
+
+            // Registrar la petición fallida en el Discovery
+            await registerRequest(instance.id, {
+                type: 'POST',
+                payload: 'Image Processing Request',
+                response: `Error: ${error.message}`,
+                url: `${instance.url}/process`
+            });
+
             await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
         }
     }
 
-    return res.status(500).send('No se pudo procesar la solicitud. Todas las instancias fallaron.');
+    if (!success) {
+        res.status(500).send('No se pudo procesar la solicitud. Todas las instancias fallaron.');
+    }
 });
+
+// Función para registrar la petición en el Discovery
+async function registerRequest(instanceId, requestData) {
+    try {
+        await axios.post(`${process.env.DISCOVERY_URL}/instances/${instanceId}/requests`, requestData);
+        console.log(`Petición registrada para la instancia ${instanceId}`);
+    } catch (error) {
+        console.error(`Error al registrar la petición para la instancia ${instanceId}:`, error.message);
+    }
+}
 
 app.post('/trigger-chaos', async (req, res) => {
     try {

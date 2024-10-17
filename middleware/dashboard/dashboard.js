@@ -102,7 +102,7 @@ async function fetchAndDisplayRequests(instanceId) {
             throw new Error('Error al obtener las peticiones');
         }
         const requests = await response.json();
-        console.log('Peticiones recibidas:', requests); // Agregamos este log para depuración
+        console.log('Peticiones recibidas:', requests);
         if (Array.isArray(requests)) {
             updateRequestsTable(requests);
         } else {
@@ -136,6 +136,7 @@ function updateRequestsTable(requests) {
         requestsBody.insertAdjacentHTML('beforeend', row);
     });
 }
+
 
 // Función para limpiar la tabla de peticiones
 function clearRequestsTable() {
