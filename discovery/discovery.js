@@ -6,25 +6,31 @@ const { exec } = require('child_process');
 const Docker = require('dockerode');
 const WebSocket = require('ws');
 
-const docker = new Docker();
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const HEALTH_THRESHOLD = 15000;
+const HEALTH_THRESHOLD = 5000; // Tiempo máximo de respuesta en ms
 const hostIp = process.env.HOST_IP || 'localhost';
 const PORT = process.env.PORT || 6001;
+const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+
 
 let backends = [];
-let serverHistory = {};  // Guardará el historial de estado de cada instancia
-let requestHistory = {}; // Guardará el historial de peticiones de cada instancia
+let serverHistory = {};  // Historial de estado de cada instancia
+let requestHistory = {}; // Historial de peticiones de cada instancia
+let nextPort = 3006;     // Contador global para puertos
 
 // Inicializar WebSocket Server
 const wss = new WebSocket.Server({ port: 8080 });
 
 // Función para enviar actualizaciones de estado a los clientes WebSocket
 const sendStatusToClients = () => {
-    const data = JSON.stringify(backends);
+    const message = {
+        type: 'serverStatus',
+        data: backends
+    };
+    const data = JSON.stringify(message);
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(data);
@@ -32,9 +38,85 @@ const sendStatusToClients = () => {
     });
 };
 
+// Función para crear una nueva instancia
+const createNewInstance = (instanceId) => {
+    const port = nextPort++;
+    const containerName = instanceId || `backend-${port}`;
+
+    const dockerCommand = `docker run -d -p ${port}:${port} -e HOST_PORT=${port} --env-file .env --name ${containerName} mi_backend`;
+
+    exec(dockerCommand, (error, stdout, stderr) => {
+        if (error) {
+            console.error('Error al crear el contenedor:', error);
+            return;
+        }
+        console.log(`Instancia creada: ${stdout.trim()}`);
+        console.log(`Instancia creada y corriendo en el puerto ${port}`);
+
+        // Registrar la nueva instancia después de que está corriendo
+        registerInstance(port, containerName);
+    });
+};
+async function triggerChaosEngineering() {
+    if (backends.length === 0) {
+        console.log('No hay instancias disponibles para aplicar ingeniería de caos.');
+        return;
+    }
+
+    // Seleccionar una instancia saludable aleatoria
+    const healthyInstances = backends.filter(instance => instance.status === 'healthy');
+    if (healthyInstances.length === 0) {
+        console.log('No hay instancias saludables disponibles para aplicar ingeniería de caos.');
+        return;
+    }
+
+    const randomIndex = Math.floor(Math.random() * healthyInstances.length);
+    const instance = healthyInstances[randomIndex];
+
+    console.log(`Aplicando ingeniería de caos a la instancia: ${instance.id}`);
+
+    // Detener y eliminar el contenedor Docker
+    try {
+        // Utiliza instance.containerName
+        const container = docker.getContainer(instance.containerName);
+        await container.stop();
+        await container.remove();
+
+        console.log(`Contenedor ${instance.containerName} detenido y eliminado.`);
+    } catch (error) {
+        console.error(`Error al detener/eliminar el contenedor ${instance.containerName}:`, error);
+    }
+}
+
+// Endpoint para desencadenar ingeniería de caos
+app.post('/trigger-chaos', async (req, res) => {
+    try {
+        await triggerChaosEngineering();
+        res.status(200).send('Ingeniería de caos ejecutada con éxito.');
+    } catch (error) {
+        console.error('Error al ejecutar ingeniería de caos:', error);
+        res.status(500).send('Error al ejecutar ingeniería de caos.');
+    }
+});
+
+// Función para registrar la instancia en el discovery
+const registerInstance = async (port, containerName) => {
+    try {
+        await axios.post(`http://${hostIp}:${PORT}/register`, {
+            id: containerName,
+            address: hostIp,
+            port: port,
+            containerName: containerName
+        });
+        console.log(`Nueva instancia registrada: ${containerName}`);
+    } catch (error) {
+        console.error(`Error al registrar la instancia ${containerName}:`, error.message);
+    }
+};
+
 // Registrar instancias backend
 app.post('/register', (req, res) => {
-    const { id, address, port } = req.body;
+    const { id, address, port, containerName } = req.body;
     console.log(`Intento de registro: ID=${id}, Address=${address}, Port=${port}`);
     
     const exists = backends.some(backend => backend.id === id);
@@ -44,7 +126,8 @@ app.post('/register', (req, res) => {
             address: address === 'host.docker.internal' ? 'localhost' : address, 
             port, 
             status: 'unknown', 
-            lastCheck: null 
+            lastCheck: null,
+            containerName
         });
         serverHistory[id] = [];
         requestHistory[id] = []; // Inicializar el historial de peticiones para la nueva instancia
@@ -55,7 +138,8 @@ app.post('/register', (req, res) => {
         backends[index] = {
             ...backends[index],
             address: address === 'host.docker.internal' ? 'localhost' : address,
-            port
+            port,
+            containerName
         };
     }
     res.status(200).send('Instancia registrada');
@@ -63,33 +147,21 @@ app.post('/register', (req, res) => {
 
 // Función para manejar instancias no saludables
 async function handleUnhealthyInstance(instance) {
-  console.log(`Instance ${instance.id} is unhealthy`);
-  
-  // En lugar de eliminar la instancia, simplemente actualizamos su estado
-  const index = backends.findIndex(b => b.id === instance.id);
-  if (index !== -1) {
-      backends[index].status = 'unhealthy';
-      backends[index].lastCheck = new Date().toISOString();
-      
-      // Agregar esta entrada al historial
-      if (!serverHistory[instance.id]) {
-          serverHistory[instance.id] = [];
-      }
-      serverHistory[instance.id].push({
-          status: 'unhealthy',
-          timestamp: backends[index].lastCheck,
-          responseTime: HEALTH_THRESHOLD // Asumimos el peor caso
-      });
-      
-      // Limitar el historial a las últimas 50 entradas
-      if (serverHistory[instance.id].length > 50) {
-          serverHistory[instance.id].shift();
-      }
-  }
-  
-  // No creamos una nueva instancia aquí
-  console.log(`Updated status of instance ${instance.id} to unhealthy`);
+    console.log(`Instance ${instance.id} is unhealthy`);
+
+    // Encontrar el índice de la instancia
+    const index = backends.findIndex(b => b.id === instance.id);
+    if (index !== -1) {
+        // Eliminar la instancia de la lista de backends
+        backends.splice(index, 1);
+    }
+
+    console.log(`Removed instance ${instance.id} from backends`);
+
+    // Lanzar una nueva instancia
+    createNewInstance();
 }
+
 
 // Función para realizar health checks periódicos
 const checkHealth = async () => {
@@ -98,7 +170,7 @@ const checkHealth = async () => {
         const start = Date.now();
         try {
             const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { 
-                timeout: 5000,
+                timeout: HEALTH_THRESHOLD,
             });
             const responseTime = Date.now() - start;
 
@@ -108,73 +180,59 @@ const checkHealth = async () => {
             } else {
                 throw new Error('Unhealthy response');
             }
+
+            backend.lastCheck = new Date().toISOString();
+
+            // Guardar el historial de estado
+            if (!serverHistory[backend.id]) {
+                serverHistory[backend.id] = [];
+            }
+            serverHistory[backend.id].push({
+                status: backend.status,
+                responseTime: responseTime,
+                timestamp: backend.lastCheck
+            });
+
+            // Limitar el historial a las últimas 50 entradas
+            if (serverHistory[backend.id].length > 50) {
+                serverHistory[backend.id].shift();
+            }
+
+            // Enviar actualización del historial a los clientes
+            sendInstanceHistoryUpdate(backend.id);
         } catch (error) {
-            backend.status = 'unhealthy';
             console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (${error.message})`);
             await handleUnhealthyInstance(backend);
         }
+    }
 
-      backend.lastCheck = new Date().toISOString();
+    // Enviar la actualización de estado a los clientes WebSocket
+    sendStatusToClients();
+};
 
-      // Guardar el historial de estado
-      if (!serverHistory[backend.id]) {
-          serverHistory[backend.id] = [];
-      }
-      serverHistory[backend.id].push({
-          status: backend.status,
-          responseTime: Date.now() - start,
-          timestamp: backend.lastCheck
-      });
-
-      // Limitar el historial a las últimas 50 entradas
-      if (serverHistory[backend.id].length > 50) {
-          serverHistory[backend.id].shift();
-      }
-  }
-
-  // Enviar la actualización de estado a los clientes WebSocket
-  sendStatusToClients();
+// Función para enviar actualizaciones de historial de instancia a los clientes WebSocket
+const sendInstanceHistoryUpdate = (instanceId) => {
+    const message = {
+        type: 'instanceHistoryUpdate',
+        instanceId: instanceId,
+        history: serverHistory[instanceId]
+    };
+    const data = JSON.stringify(message);
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(data);
+        }
+    });
 };
 
 // Hacer health checks cada 30 segundos
 setInterval(checkHealth, 30000);
 
-// Crear una nueva instancia con Docker y registrarla automáticamente
+// Endpoint para crear una nueva instancia manualmente
 app.post('/create-instance', (req, res) => {
-    const port = 3006 + backends.length;
-    const containerName = `backend_instance_${backends.length + 1}`;
-
-    const dockerCommand = `docker run -d -p ${port}:${port} -e HOST_PORT=${port} --env-file .env --name ${containerName} mi_backend`;
-
-
-    exec(dockerCommand, (error, stdout, stderr) => {
-        if (error) {
-            console.error('Error al crear el contenedor:', error);
-            return res.status(500).send('Error al crear instancia');
-        }
-        console.log(`Instancia creada: ${stdout.trim()}`);
-        console.log(`Instancia creada y corriendo en el puerto ${port}`);
-
-        // Registrar la nueva instancia después de que está corriendo
-        registerInstance(port);
-
-        res.status(200).send('Instancia creada y registrada con éxito');
-    });
+    createNewInstance();
+    res.status(200).send('Instancia creada y registrada con éxito');
 });
-
-// Función para registrar la instancia en el discovery
-const registerInstance = async (port) => {
-    try {
-        const response = await axios.post(`http://${hostIp}:${PORT}/register`, {
-            id: `backend-${port}`,
-            address: hostIp,
-            port: port
-        });
-        console.log(`Nueva instancia registrada: backend-${port}`);
-    } catch (error) {
-        console.error(`Error al registrar la instancia backend-${port}:`, error.message);
-    }
-};
 
 // Endpoint para obtener el historial de una instancia específica
 app.get('/instances/:id/history', (req, res) => {
@@ -200,6 +258,7 @@ app.get('/instances/:id/requests', (req, res) => {
     }
 });
 
+// Endpoint para registrar una nueva petición para una instancia
 app.post('/instances/:id/requests', express.json(), (req, res) => {
     const instanceId = req.params.id;
     const newRequest = req.body;
@@ -208,12 +267,33 @@ app.post('/instances/:id/requests', express.json(), (req, res) => {
         requestHistory[instanceId] = [];
     }
     
-    requestHistory[instanceId].push({
+    const requestEntry = {
         ...newRequest,
         date: new Date().toISOString()
-    });
+    };
+
+    requestHistory[instanceId].push(requestEntry);
+
+    // Limitar el historial de peticiones a las últimas 100 entradas
+    if (requestHistory[instanceId].length > 100) {
+        requestHistory[instanceId].shift();
+    }
     
     console.log(`Nueva petición registrada para la instancia ${instanceId}`);
+
+    // Enviar notificación por WebSocket
+    const message = {
+        type: 'newRequest',
+        instanceId: instanceId,
+        request: requestEntry
+    };
+    const data = JSON.stringify(message);
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(data);
+        }
+    });
+    
     res.status(201).json({ message: 'Petición registrada con éxito' });
 });
 

@@ -1,22 +1,49 @@
 // Conectar con el WebSocket del servicio de Discovery
-const ws = new WebSocket('ws://localhost:8080');
+let ws = new WebSocket('ws://localhost:8080');
 
 let selectedInstanceId = null;
 
-// Al recibir actualizaciones de WebSocket
+// Manejador de mensajes de WebSocket
 ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    updateServerTable(data);
-    populateInstanceFilter(data);
-    
-    // Si hay una instancia seleccionada, actualizar su información
-    if (selectedInstanceId) {
-        const selectedInstance = data.find(server => server.id === selectedInstanceId);
-        if (selectedInstance) {
-            updateInstanceHistory(selectedInstanceId);
-            fetchAndDisplayRequests(selectedInstanceId);
+    const message = JSON.parse(event.data);
+
+    if (message.type === 'serverStatus') {
+        const data = message.data;
+        updateServerTable(data);
+        populateInstanceFilter(data);
+
+        // Si hay una instancia seleccionada, actualizar su información
+        if (selectedInstanceId) {
+            const selectedInstance = data.find(server => server.id === selectedInstanceId);
+            if (selectedInstance) {
+                updateInstanceHistory(selectedInstanceId);
+                // No es necesario llamar a fetchAndDisplayRequests aquí, ya que las peticiones se actualizan en tiempo real
+            }
+        }
+    } else if (message.type === 'newRequest') {
+        // Verificar si la nueva petición corresponde a la instancia seleccionada
+        if (selectedInstanceId === message.instanceId) {
+            addRequestToTable(message.request);
+        }
+    } else if (message.type === 'instanceHistoryUpdate') {
+        // Si la actualización del historial es para la instancia seleccionada, actualizar el gráfico
+        if (selectedInstanceId === message.instanceId) {
+            updateHistoryChart(message.history);
         }
     }
+};
+
+// Manejar el cierre del WebSocket y reintentar la conexión
+ws.onclose = function(event) {
+    console.log('WebSocket cerrado. Intentando reconectar...');
+    setTimeout(function() {
+        ws = new WebSocket('ws://localhost:8080');
+    }, 1000);
+};
+
+// Manejar errores en el WebSocket
+ws.onerror = function(error) {
+    console.error('WebSocket error:', error);
 };
 
 // Actualizar la tabla de servidores con las nuevas instancias o cambios de estado
@@ -137,6 +164,24 @@ function updateRequestsTable(requests) {
     });
 }
 
+// Función para añadir una nueva petición a la tabla
+function addRequestToTable(request) {
+    const requestsBody = document.getElementById('requests-body');
+
+    // Si la tabla muestra el mensaje de "No hay peticiones", lo limpiamos
+    if (requestsBody.children.length === 1 && requestsBody.children[0].children.length === 1) {
+        requestsBody.innerHTML = '';
+    }
+
+    const row = `<tr>
+        <td>${request.type || 'N/A'}</td>
+        <td>${request.payload || 'N/A'}</td>
+        <td>${new Date(request.date).toLocaleString()}</td>
+        <td>${request.response || 'N/A'}</td>
+        <td>${request.url || 'N/A'}</td>
+    </tr>`;
+    requestsBody.insertAdjacentHTML('beforeend', row);
+}
 
 // Función para limpiar la tabla de peticiones
 function clearRequestsTable() {
@@ -252,9 +297,9 @@ function clearHistoryChart() {
 }
 
 // Botón para ejecutar la ingeniería de caos
-document.getElementById('chaosButton').addEventListener('click', async () => {
+document.getElementById('trigger-chaos-btn').addEventListener('click', async () => {
     try {
-        const response = await fetch('http://localhost:4000/trigger-chaos', {
+        const response = await fetch('http://localhost:6001/trigger-chaos', {
             method: 'POST',
         });
         if (response.ok) {
@@ -267,4 +312,3 @@ document.getElementById('chaosButton').addEventListener('click', async () => {
         alert('Error al activar caos.');
     }
 });
-
