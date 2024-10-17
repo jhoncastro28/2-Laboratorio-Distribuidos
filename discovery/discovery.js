@@ -93,28 +93,26 @@ async function handleUnhealthyInstance(instance) {
 
 // Función para realizar health checks periódicos
 const checkHealth = async () => {
-  console.log(`Checking health of ${backends.length} backends`);
-  for (let backend of backends) {
-      const start = Date.now();
-      try {
-          const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { 
-              timeout: 5000,
-          });
-          const responseTime = Date.now() - start;
+    console.log(`Checking health of ${backends.length} backends`);
+    for (let backend of backends) {
+        const start = Date.now();
+        try {
+            const response = await axios.get(`http://${backend.address}:${backend.port}/health`, { 
+                timeout: 5000,
+            });
+            const responseTime = Date.now() - start;
 
-          if (response.status === 200 && responseTime <= HEALTH_THRESHOLD) {
-              backend.status = 'healthy';
-              console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): healthy (Tiempo de respuesta: ${responseTime}ms)`);
-          } else {
-              backend.status = 'unhealthy';
-              console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (Tiempo de respuesta excedido: ${responseTime}ms)`);
-              await handleUnhealthyInstance(backend);
-          }
-      } catch (error) {
-          backend.status = 'unhealthy';
-          console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (${error.message})`);
-          await handleUnhealthyInstance(backend);
-      }
+            if (response.status === 200 && responseTime <= HEALTH_THRESHOLD) {
+                backend.status = 'healthy';
+                console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): healthy (Tiempo de respuesta: ${responseTime}ms)`);
+            } else {
+                throw new Error('Unhealthy response');
+            }
+        } catch (error) {
+            backend.status = 'unhealthy';
+            console.log(`Estado de ${backend.id} (${backend.address}:${backend.port}): unhealthy (${error.message})`);
+            await handleUnhealthyInstance(backend);
+        }
 
       backend.lastCheck = new Date().toISOString();
 
@@ -144,33 +142,23 @@ setInterval(checkHealth, 30000);
 // Crear una nueva instancia con Docker y registrarla automáticamente
 app.post('/create-instance', (req, res) => {
     const port = 3006 + backends.length;
+    const containerName = `backend_instance_${backends.length + 1}`;
 
-    docker.createContainer({
-        Image: 'mi_backend', // Cambiar con el nombre correcto de la imagen
-        Tty: true,
-        ExposedPorts: { '3000/tcp': {} },
-        HostConfig: {
-            PortBindings: { '3000/tcp': [{ HostPort: port.toString() }] }
-        }
-    }, function (err, container) {
-        if (err) {
-            console.error('Error al crear el contenedor:', err);
+    const dockerCommand = `docker run -d -p ${port}:${port} -e HOST_PORT=${port} --env-file .env --name ${containerName} mi_backend`;
+
+
+    exec(dockerCommand, (error, stdout, stderr) => {
+        if (error) {
+            console.error('Error al crear el contenedor:', error);
             return res.status(500).send('Error al crear instancia');
         }
-        container.start((startErr) => {
-            if (startErr) {
-                console.error('Error al iniciar el contenedor:', startErr);
-                return res.status(500).send('Error al iniciar instancia');
-            }
-            const id = container.id;
-            const address = 'localhost'; // O la dirección donde esté el contenedor
-            console.log(`Instancia creada y corriendo en el puerto ${port}`);
+        console.log(`Instancia creada: ${stdout.trim()}`);
+        console.log(`Instancia creada y corriendo en el puerto ${port}`);
 
-            // Registrar la nueva instancia después de que está corriendo
-            registerInstance(port);
+        // Registrar la nueva instancia después de que está corriendo
+        registerInstance(port);
 
-            res.status(200).send('Instancia creada y registrada con éxito');
-        });
+        res.status(200).send('Instancia creada y registrada con éxito');
     });
 });
 

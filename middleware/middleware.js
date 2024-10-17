@@ -34,7 +34,7 @@ async function fetchInstances() {
 
 
 fetchInstances();
-setInterval(fetchInstances, 60000);
+setInterval(fetchInstances, 30000);
 
 app.post('/process', upload.single('image'), async (req, res) => {
     if (instances.length === 0) {
