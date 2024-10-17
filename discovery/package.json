@@ -1,7 +1,6 @@
 {
   "name": "discovery",
   "version": "1.0.0",
-  "description": "",
   "main": "discovery.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -17,5 +16,6 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "ws": "^8.18.0"
-  }
+  },
+  "description": ""
 }
